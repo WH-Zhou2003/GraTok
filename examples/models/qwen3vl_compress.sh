@@ -1,7 +1,7 @@
-export HF_HOME="/data_sdc/data/zwh/dataset"
+export HF_HOME="~/.cache/huggingface"
 # pip3 install transformers==4.57.1 (Qwen3VL models)
 # pip3 install ".[qwen]" (for Qwen's dependencies)
-export CUDA_VISIBLE_DEVICES=1
+# export CUDA_VISIBLE_DEVICES=1
 # Exmaple with Qwen3-VL-4B-Instruct: https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct 
 #video_mmmu/videochatgpt/mvbench/nextqa_mc_test/PLM-VideoBench/videott/videomme
 # export DECORD_EOF_RETRY_MAX=81920
