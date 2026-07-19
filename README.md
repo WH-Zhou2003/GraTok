@@ -50,7 +50,7 @@ bash examples/models/llava_ov1_5_compress.sh
 ```
 The above scripts will automatically download the required model weights and datasets from Hugging Face.
 
-By default, all downloaded files will be stored in:'~/.cache/huggingface'. You can specify another cache directory by setting:'export HF_HOME=/path/to/your/cache'.
+By default, all downloaded files will be stored in `~/.cache/huggingface`. You can specify another cache directory by setting `export HF_HOME=/path/to/your/cache`.
 
-The model checkpoint and evaluation dataset can be specified through command-line arguments. Use '--model_args' to select the desired pretrained model weights. Use '--task' to select the evaluation benchmark.
+The model checkpoint and evaluation dataset can be specified through command-line arguments. Use `--model_args` to select the desired pretrained model weights. Use `--task` to select the evaluation benchmark.
 
