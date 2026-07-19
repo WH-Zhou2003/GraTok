@@ -9,7 +9,7 @@ GraTok is a **training-free 3D spatio-temporal graph-based token compression met
 The overall pipeline of GraTok is illustrated below:
 
 <p align="center">
-  <img src="assets/overview.png" width="90%">
+  <img src="assets/overall.png" width="90%">
 </p>
 
 GraTok constructs a unified spatio-temporal graph over visual tokens and performs importance-aware iterative token merging. The proposed method can be directly applied to existing Video MLLMs without additional training.
