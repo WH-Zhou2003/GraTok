@@ -45,7 +45,7 @@ We provide evaluation scripts for different Video MLLM backbones.
 bash examples/models/qwen3vl_compress.sh
 ```
 ## LLaVA-OneVision-1.5
-
+First, unzip `llava.zip` into `lmms_eval/models/model_utils/compress`, and then run the evaluation.
 ```bash
 bash examples/models/llava_ov1_5_compress.sh
 ```
