@@ -35,18 +35,16 @@ If you would like to use the complete evaluation pipeline, please follow the ins
 
 ---
 
-# Evaluation
-
-## Run Evaluation
+# Run Evaluation
 
 We provide evaluation scripts for different Video MLLM backbones.
 
-### Qwen3-VL
+## Qwen3-VL
 
 ```bash
 bash examples/models/qwen3vl_compress.sh
 ```
-### LLaVA-OneVision-1.5
+## LLaVA-OneVision-1.5
 ```bash
 bash examples/models/llava_ov1_5_compress.sh
 ```
