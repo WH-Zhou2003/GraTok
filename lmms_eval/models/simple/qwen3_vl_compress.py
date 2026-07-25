@@ -38,9 +38,9 @@ except ImportError:
 class Qwen3VLForConditionalGeneration_compress(Qwen3VLForConditionalGeneration):
     def __init__(self, config):
         super().__init__(config)
-        # self.model = Qwen3VLModel_compress(config)
+        self.model = Qwen3VLModel_compress(config)
         # self.model = Qwen3VLModel_fastv(config)
-        self.model = Qwen3VLModel_Dycoke(config)
+        # self.model = Qwen3VLModel_Dycoke(config)
 
 
 @register_model("qwen3_vl_compress")
