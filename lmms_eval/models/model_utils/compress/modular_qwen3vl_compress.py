@@ -23,7 +23,7 @@ class Qwen3VLVisionModel_compress(Qwen3VLVisionModel):
         ############
         # 初始化压缩器#
         ############
-        self.refiner = STGTokenRefiner(tau=0.7, alpha=0.3, beta=0.5, lambda_coeff=0.5, p=0.15)
+        self.refiner = STGTokenRefiner(tau=0.7, alpha=0.3, beta=0.5, lambda_coeff=0.5, p=0.5)
 
         ###################################改变forward#######################
         # import type
