@@ -1,9 +1,20 @@
+# ===========================================================================
+# LEGACY / UNUSED.  Nothing in this repository imports this module any more:
+# both backbones now call the single implementation in gratok.py.
+#
+# This file contained three different versions of the method
+# (`refine_tokens_gpu_optimized`, `refine_tokens_gpu_included_depstack` and
+# `refine_tokens_gpu_optimized2`), of which only the last one was ever called,
+# and it also carried the temporal-degree attribution bug that gratok.py fixes.
+# Keep it only as a historical reference, and delete it before the public
+# release so that the artifact does not ship three contradictory algorithms.
+# ===========================================================================
 import torch
 import torch.nn.functional as F
 import heapq
 
 class STGTokenRefiner:
-    def __init__(self, tau=0.5, alpha=0.0, beta=0.5, lambda_coeff=0.5, p=0.5):
+    def __init__(self, tau=0.5, alpha=0.0, beta=0.5, lambda_coeff=0.5, p=0.5, keep_isolated=True):
         """
         3D时空图Token精炼模块初始化
         :param tau: 邻居筛选阈值
@@ -11,12 +22,14 @@ class STGTokenRefiner:
         :param beta: 时空依赖度平衡系数
         :param lambda_coeff: 权重/依赖度平衡系数
         :param p: 保留Token百分比
+        :param keep_isolated: 没有存活邻居的 token 是保留（True，与 gratok.py 一致）还是删除（False，旧行为）
         """
         self.tau = tau
         self.alpha = alpha
         self.beta = beta
         self.lambda_coeff = lambda_coeff
         self.p = p
+        self.keep_isolated = keep_isolated
 
     
     def compute_similarity_batch(self, X):
@@ -266,12 +279,13 @@ class STGTokenRefiner:
                 # 后一帧邻居
                 if t < T - 1 and A_inter.numel() > 0:
                     adj_lookup[idx, (t + 1) * N:(t + 2) * N] = A_inter[t, s, :].bool()
-        # 删除低分token直到达到目标数量M
-        while active_mask.sum() > M:
+        # 删除低分token直到达到目标数量M（keep_isolated 时没有邻居的 token 保留）
+        frozen = torch.zeros_like(active_mask)
+        while (active_mask & ~frozen).sum() > M:
             # 找到当前最低分的活跃token
             # 将不活跃token的分数设为无穷大，这样argmin不会选中它们
             masked_scores = torch.where(
-                active_mask,
+                active_mask & ~frozen,
                 token_scores,
                 torch.tensor(float('inf'), device=X.device)
             )
@@ -284,8 +298,11 @@ class STGTokenRefiner:
             # 排除自己
             neighbor_indices = neighbor_indices[neighbor_indices != min_idx]
             if len(neighbor_indices) == 0:
-                # 如果没有邻居，直接丢弃
-                active_mask[min_idx] = False
+                # 没有存活邻居：keep_isolated 时保留该 token，否则删除（旧行为）
+                if self.keep_isolated:
+                    frozen[min_idx] = True
+                else:
+                    active_mask[min_idx] = False
                 continue
             # 找到最相似的邻居
             sim_values = sim_lookup[min_idx, neighbor_indices]
@@ -428,12 +445,13 @@ class STGTokenRefiner:
                 # 后一帧邻居
                 if t < T - 1 and A_inter.numel() > 0:
                     adj_lookup[idx, (t + 1) * N:(t + 2) * N] = A_inter[t, s, :].bool()
-        # 删除低分token直到达到目标数量M
-        while active_mask.sum() > M:
+        # 删除低分token直到达到目标数量M（keep_isolated 时没有邻居的 token 保留）
+        frozen = torch.zeros_like(active_mask)
+        while (active_mask & ~frozen).sum() > M:
             # 找到当前最低分的活跃token
             # 将不活跃token的分数设为无穷大，这样argmin不会选中它们
             masked_scores = torch.where(
-                active_mask,
+                active_mask & ~frozen,
                 token_scores,
                 torch.tensor(float('inf'), device=X.device)
             )
@@ -446,8 +464,11 @@ class STGTokenRefiner:
             # 排除自己
             neighbor_indices = neighbor_indices[neighbor_indices != min_idx]
             if len(neighbor_indices) == 0:
-                # 如果没有邻居，直接删除
-                active_mask[min_idx] = False
+                # 没有存活邻居：keep_isolated 时保留该 token，否则删除（旧行为）
+                if self.keep_isolated:
+                    frozen[min_idx] = True
+                else:
+                    active_mask[min_idx] = False
                 continue
             # 找到最相似的邻居
             sim_values = sim_lookup[min_idx, neighbor_indices]
@@ -774,7 +795,9 @@ class STGTokenRefiner:
             high_score_neighbors = [n for n in all_neighbors if active_mask[n].item()]
             
             if len(high_score_neighbors) == 0:
-                # 如果没有活跃邻居，直接丢弃
+                # 没有活跃邻居：keep_isolated 时把该 token 留在输出里，否则丢弃
+                if self.keep_isolated:
+                    high_score_indices = torch.cat([high_score_indices, low_idx.view(1)])
                 continue
             
             # 找到最相似的高分邻居
@@ -937,12 +960,13 @@ class STGTokenRefiner:
                 # 后一帧邻居
                 if t < T - 1 and A_inter.numel() > 0:
                     adj_lookup[idx, (t + 1) * N:(t + 2) * N] = A_inter[t, s, :].bool()
-        # 删除低分token直到达到目标数量M
-        while active_mask.sum() > M:
+        # 删除低分token直到达到目标数量M（keep_isolated 时没有邻居的 token 保留）
+        frozen = torch.zeros_like(active_mask)
+        while (active_mask & ~frozen).sum() > M:
             # 找到当前最低分的活跃token
             # 将不活跃token的分数设为无穷大，这样argmin不会选中它们
             masked_scores = torch.where(
-                active_mask,
+                active_mask & ~frozen,
                 token_scores,
                 torch.tensor(float('inf'), device=X.device)
             )
@@ -956,8 +980,11 @@ class STGTokenRefiner:
             neighbor_indices = neighbor_indices[neighbor_indices != min_idx]
 
             if len(neighbor_indices) == 0:
-                # 如果没有邻居，直接丢弃
-                active_mask[min_idx] = False
+                # 没有存活邻居：keep_isolated 时保留该 token，否则删除（旧行为）
+                if self.keep_isolated:
+                    frozen[min_idx] = True
+                else:
+                    active_mask[min_idx] = False
                 continue
             # 找到最相似的邻居
             sim_values = sim_lookup[min_idx, neighbor_indices]

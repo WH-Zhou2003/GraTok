@@ -6,15 +6,18 @@ import torch
 from transformers.processing_utils import Unpack
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.models.qwen2_vl.modeling_qwen2_vl import TransformersKwargs
-from .stgtokenrefiner2 import STGTokenRefiner
+from .gratok import GraTok
 from .scissor import compress_video_features
 # import numpy as np
 from transformers.masking_utils import create_causal_mask
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_outputs import BaseModelOutputWithPast
 import os
+import logging
 # from qwen3vl_vidcom2_forward import Qwen3VL_ViT_forward
 from .vidcom2 import *
+
+logger = logging.getLogger(__name__)
 
 
 class Qwen3VLVisionModel_compress(Qwen3VLVisionModel):
@@ -23,7 +26,12 @@ class Qwen3VLVisionModel_compress(Qwen3VLVisionModel):
         ############
         # 初始化压缩器#
         ############
-        self.refiner = STGTokenRefiner(tau=0.7, alpha=0.3, beta=0.5, lambda_coeff=0.5, p=0.5)
+        # Single shared implementation (see gratok.py).  The retention ratio is
+        # a run parameter: export GRATOK_RETENTION=0.3 (or GRATOK_TAU, ...)
+        # instead of editing this line, so that every run records its own
+        # configuration in the log.
+        self.refiner = GraTok.from_env(tau=0.7, alpha=0.3, beta=0.5, lam=0.5, p=0.5)
+        logger.info("Qwen3-VL compressor: %s", self.refiner)
 
         ###################################改变forward#######################
         # import type
@@ -79,7 +87,7 @@ class Qwen3VLVisionModel_compress(Qwen3VLVisionModel):
 
         hidden_states = self.merger(hidden_states)
         ################### Token压缩 #####################
-        hidden_states, kept_ids = self.refiner.refine_tokens_gpu_optimized2(hidden_states, grid_thw[0])
+        hidden_states, kept_ids = self.refiner.compress(hidden_states, grid_thw[0])
 
         ###################### scissor压缩 #####################
         # hidden_states, kept_ids = compress_video_features(video_features=hidden_states,T=grid_thw[0][0], H=grid_thw[0][1]//2, W=grid_thw[0][2]//2, tau=0.95, epsilon=0.05)
@@ -405,6 +413,12 @@ class Qwen3VLModel_compress(Qwen3VLModel):
             position_ids = position_ids[:, :, retention_video_indice_in_all_tokens]
             attention_mask = attention_mask[:, retention_video_indice_in_all_tokens]
             visual_pos_masks = visual_pos_masks[:, retention_video_indice_in_all_tokens]
+            # cache_position still describes the *unpruned* sequence; leaving it
+            # alone makes create_causal_mask build a (unpruned, pruned) mask and
+            # sdpa/eager fail with a shape error.  flash-attention-2 never
+            # builds that mask, which is why the original code only ran on FA2.
+            if cache_position is not None:
+                cache_position = cache_position[retention_video_indice_in_all_tokens]
 
         outputs = self.language_model(
             input_ids=None,

@@ -7,12 +7,24 @@ from transformers.cache_utils import DynamicCache
 from transformers.utils import is_torchdynamo_compiling
 from transformers.modeling_outputs import ModelOutput
 from .vidcom2 import *
+from .gratok import GraTok
+from ..llavaonevision1_5.modeling_llavaonevision1_5 import (
+    LLaVAOneVision1_5_ForConditionalGeneration,
+    LLaVAOneVision1_5_Model,
+)
 
 tau=0.7
 alpha=0.3
 beta=0.5
 lambda_coeff=0.5
 p=0.3
+
+# Single shared implementation, built from the constants above so that this
+# file keeps one source of truth for the hyperparameters.  They can also be
+# overridden per run with GRATOK_TAU / GRATOK_ALPHA / GRATOK_BETA /
+# GRATOK_LAMBDA / GRATOK_RETENTION, which avoids hand-editing this file for
+# every retention ratio.
+_GRATOK = GraTok.from_env(tau=tau, alpha=alpha, beta=beta, lam=lambda_coeff, p=p)
 
 def compute_similarity_batch(X):
     """批量计算所有相似度矩阵"""
@@ -165,10 +177,14 @@ def create_neighbor_masks(A_intra, A_inter, N):
     return neighbor_masks
 
 
-def refine_tokens_gpu_optimized2(X, grid_thw):
-    """
-    真正GPU优化的版本：从低分开始删除，删除时合并到相似邻居
-    """
+# ---------------------------------------------------------------------------
+# LEGACY, UNUSED.  This copy used to be the one executed for
+# LLaVA-OneVision-1.5, and it had drifted away from the algorithm in the paper:
+# it merged with a plain convex combination and accumulated the score instead
+# of averaging it (no represented-token count).  It is kept only for
+# reference and is no longer called -- see `_GRATOK` above and gratok.py.
+# ---------------------------------------------------------------------------
+def _legacy_refine_tokens_gpu_optimized2(X, grid_thw, keep_isolated=True):
     T=grid_thw[0]
     H=grid_thw[1]//2
     W=grid_thw[2]//2
@@ -297,12 +313,13 @@ def refine_tokens_gpu_optimized2(X, grid_thw):
             # 后一帧邻居
             if t < T - 1 and A_inter.numel() > 0:
                 adj_lookup[idx, (t + 1) * N:(t + 2) * N] = A_inter[t, s, :].bool()
-    # 删除低分token直到达到目标数量M
-    while active_mask.sum() > M:
+    # 删除低分token直到达到目标数量M（keep_isolated 时没有邻居的 token 保留）
+    frozen = torch.zeros_like(active_mask)
+    while (active_mask & ~frozen).sum() > M:
         # 找到当前最低分的活跃token
         # 将不活跃token的分数设为无穷大，这样argmin不会选中它们
         masked_scores = torch.where(
-            active_mask,
+            active_mask & ~frozen,
             token_scores,
             torch.tensor(float('inf'), device=X.device)
         )
@@ -315,8 +332,11 @@ def refine_tokens_gpu_optimized2(X, grid_thw):
         # 排除自己
         neighbor_indices = neighbor_indices[neighbor_indices != min_idx]
         if len(neighbor_indices) == 0:
-            # 如果没有邻居，直接丢弃
-            active_mask[min_idx] = False
+            # 没有存活邻居：keep_isolated 时保留该 token，否则删除（旧行为）
+            if keep_isolated:
+                frozen[min_idx] = True
+            else:
+                active_mask[min_idx] = False
             continue
         # 找到最相似的邻居
         sim_values = sim_lookup[min_idx, neighbor_indices]
@@ -485,7 +505,7 @@ def forward(
             video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
 
             #######################我的压缩######################
-            video_embeds, keep_ids=refine_tokens_gpu_optimized2(video_embeds,video_grid_thw[0])
+            video_embeds, keep_ids = _GRATOK.compress(video_embeds, video_grid_thw[0])
             ####################################################
 
             ################################### vidcom2压缩 ##################################
@@ -543,9 +563,7 @@ def forward(
     #############################将所有序列都只保留需要的id####################
     if pixel_values_videos is not None:
         retention_video_indice_in_all_tokens=get_kept_token_indices(video_token_mask_1d[0],keep_ids)
-        print("before_prune_input", inputs_embeds.shape)
         inputs_embeds = inputs_embeds[:, retention_video_indice_in_all_tokens, :]
-        print("after_prune_input", inputs_embeds.shape)
 
         input_ids = input_ids[:, retention_video_indice_in_all_tokens]
         position_ids = position_ids[:, retention_video_indice_in_all_tokens]
@@ -572,5 +590,32 @@ def forward(
     )
     return output if return_dict else output.to_tuple()
 
+
+class LLaVAOneVision1_5_Model_compress(LLaVAOneVision1_5_Model):
+    """Inner LLaVA-OneVision-1.5 model whose video tokens go through GraTok.
+
+    The module-level :func:`forward` above is the base class' ``forward`` with
+    the GraTok call inserted, so it is attached here rather than duplicated.
+    """
+
+    def forward(self, *args, **kwargs):
+        return forward(self, *args, **kwargs)
+
+
+class LLaVAOneVision1_5_ForConditionalGeneration_compress(
+    LLaVAOneVision1_5_ForConditionalGeneration
+):
+    """``..._ForConditionalGeneration`` with the compressed inner model.
+
+    Mirrors ``Qwen3VLForConditionalGeneration_compress`` in
+    ``modular_qwen3vl_compress.py``: the wrapper's ``model_fn`` points here, so
+    ``--model llava_onevision1_5_compress`` really does apply GraTok.  Without
+    it the wrapper loaded the *uncompressed* base class and silently produced
+    rows that had nothing to do with the method.
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = LLaVAOneVision1_5_Model_compress(config)
 
 

@@ -6,7 +6,6 @@ import torch
 from transformers.processing_utils import Unpack
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.models.qwen2_vl.modeling_qwen2_vl import TransformersKwargs
-from .stgtokenrefiner2 import STGTokenRefiner
 from .vidcom2 import vidcom2_compression
 from .scissor import compress_video_features
 # import numpy as np

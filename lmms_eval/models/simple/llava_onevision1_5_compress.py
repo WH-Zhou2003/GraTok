@@ -17,7 +17,11 @@ from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
 
-from ..model_utils.llavaonevision1_5.modeling_llavaonevision1_5 import LLaVAOneVision1_5_ForConditionalGeneration
+# The compressed subclass swaps the inner model for the GraTok one; importing
+# the plain class here would make this "compress" model run uncompressed.
+from ..model_utils.compress.llava_ov1_5_compress import (
+    LLaVAOneVision1_5_ForConditionalGeneration_compress as LLaVAOneVision1_5_ForConditionalGeneration,
+)
 # from ..model_utils.compress.modeling_llavaonevision1_5_fastv import LLaVAOneVision1_5_ForConditionalGeneration_fastv
 # from ..model_utils.compress.modeling_llavaonevision1_5_Dycoke import LLaVAOneVision1_5_ForConditionalGeneration_Dycoke
 from ..model_utils.compress.modeling_llavaonevision1_5_vidcom2 import LLaVAOneVision1_5_ForConditionalGeneration_vidcom2

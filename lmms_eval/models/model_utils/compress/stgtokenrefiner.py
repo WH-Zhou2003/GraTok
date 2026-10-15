@@ -1,10 +1,17 @@
+# ===========================================================================
+# LEGACY / UNUSED.  This file is never imported.  Its scoring function does not
+# match the paper at all (it uses the raw L2 norm of the feature as the spatial
+# saliency term and does not invert the degree term), and its merge rule
+# accumulates scores instead of averaging them.  The live implementation is
+# gratok.py.  Delete this file before the public release.
+# ===========================================================================
 import torch
 import torch.nn.functional as F
 import numpy as np
 import time
 
 class STGTokenRefiner:
-    def __init__(self, tau=0.5, alpha=0.5, beta=0.5, lambda_coeff=0.5, p=0.5):
+    def __init__(self, tau=0.5, alpha=0.5, beta=0.5, lambda_coeff=0.5, p=0.5, keep_isolated=True):
         """
         3D时空图Token精炼模块初始化
         :param tau: 邻居筛选阈值
@@ -18,6 +25,7 @@ class STGTokenRefiner:
         self.beta = beta
         self.lambda_coeff = lambda_coeff
         self.p = p
+        self.keep_isolated = keep_isolated
 
     def compute_similarity(self, x1, x2):
         """计算两个Token矩阵的余弦相似度矩阵"""
@@ -181,10 +189,13 @@ class STGTokenRefiner:
         current_indices = set(range(N_total))  # 当前保留的Token索引（原始id）
         current_scores = scores_flat.clone()
 
-        # 5. 迭代合并Token
-        while len(current_indices) > M:
-            # 找到当前分数最低的Token
-            valid_indices = list(current_indices)
+        # 5. 迭代合并Token（keep_isolated 时没有邻居的 token 不再删除，改为保留）
+        frozen = set()
+        while len(current_indices) - len(frozen) > M:
+            # 找到当前分数最低的Token（已被冻结的除外）
+            valid_indices = [i for i in current_indices if i not in frozen]
+            if not valid_indices:
+                break
             valid_scores = current_scores[valid_indices]
             min_idx = valid_indices[torch.argmin(valid_scores)]
 
@@ -213,9 +224,13 @@ class STGTokenRefiner:
                 neighbors.update(inter_next_neighbors)
 
             # 筛选有效邻居（仍在当前集合中）
-            valid_neighbors = [n for n in neighbors if n in current_indices and n != min_idx]
+            valid_neighbors = [n for n in neighbors if n in current_indices and n not in frozen and n != min_idx]
             if not valid_neighbors:
-                current_indices.remove(min_idx)
+                # 没有存活邻居：keep_isolated 时保留该 token，否则删除（旧行为）
+                if self.keep_isolated:
+                    frozen.add(min_idx)
+                else:
+                    current_indices.remove(min_idx)
                 continue
 
             # 找到最相似的邻居

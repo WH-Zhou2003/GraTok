@@ -32,9 +32,16 @@ if config["metadata"]["load_package"]:
         from nltk.corpus import wordnet
         from nltk.tokenize import word_tokenize
 
-        nltk.download("averaged_perceptron_tagger", quiet=True)
-        nltk.download("wordnet", quiet=True)
-        nltk.download("punkt", quiet=True)
+        # Only fetch when the corpora are actually missing: nltk.download()
+        # pulls its package index over the network even when every package is
+        # already installed, and on a slow or blocked link that stalls the
+        # whole evaluation for minutes before it gives up.
+        try:
+            wordnet.ensure_loaded()
+        except LookupError:
+            nltk.download("averaged_perceptron_tagger", quiet=True)
+            nltk.download("wordnet", quiet=True)
+            nltk.download("punkt", quiet=True)
     except ImportError:
         eval_logger.debug("nltk not installed. Please install nltk to use this module. You can install it by running 'pip install nltk'")
 
